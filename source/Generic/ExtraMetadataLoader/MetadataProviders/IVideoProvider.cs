@@ -38,12 +38,14 @@ namespace ExtraMetadataLoader.MetadataProviders
         public string DownloadPath { get; private set; }
         public bool IsBackgroundDownload { get; private set; }
         public VideoType VideoType { get; private set; }
+        public bool SelectAutomatically { get; private set; }
 
-        public VideoDownloadOptions (string downloadPath, bool isBackgroundDownload, VideoType videoType = VideoType.Trailer)
+        public VideoDownloadOptions(string downloadPath, bool isBackgroundDownload, VideoType videoType = VideoType.Trailer, bool selectAutomatically = false)
         {
             DownloadPath = downloadPath;
             IsBackgroundDownload = isBackgroundDownload;
             VideoType = videoType;
+            SelectAutomatically = selectAutomatically;
         }
     }
 
