@@ -84,6 +84,8 @@
     </Reference>
     <Reference Include="System.ComponentModel.DataAnnotations" />
     <Reference Include="System.Core" />
+    <Reference Include="System.IO.Compression" />
+    <Reference Include="System.IO.Compression.FileSystem" />
     <Reference Include="System.Diagnostics.DiagnosticSource, Version=6.0.0.0, Culture=neutral, PublicKeyToken=cc7b13ffcd2ddd51, processorArchitecture=MSIL">
       <HintPath>..\..\packages\System.Diagnostics.DiagnosticSource.6.0.0\lib\net461\System.Diagnostics.DiagnosticSource.dll</HintPath>
     </Reference>
@@ -251,8 +253,18 @@
     <Compile Include="Helpers\ExtraMetadataHelper.cs" />
     <Compile Include="Interfaces\ILogoProvider.cs" />
     <Compile Include="LogoProviders\GoogleProvider.cs" />
+    <Compile Include="LogoProviders\LaunchBox\LaunchBoxClearLogoProvider.cs" />
+    <Compile Include="LogoProviders\LaunchBox\LaunchBoxMetadataCache.cs" />
+    <Compile Include="LogoProviders\LaunchBox\LaunchBoxModels.cs" />
     <Compile Include="LogoProviders\SteamGridDBProvider.cs" />
     <Compile Include="LogoProviders\SteamProvider.cs" />
+    <Compile Include="MetadataProviders\EmuMovies\EmuMoviesCredentials.cs" />
+    <Compile Include="MetadataProviders\EmuMovies\EmuMoviesCredentialsStore.cs" />
+    <Compile Include="MetadataProviders\EmuMovies\EmuMoviesFtpClient.cs" />
+    <Compile Include="MetadataProviders\EmuMovies\EmuMoviesPlatformMapper.cs" />
+    <Compile Include="MetadataProviders\EmuMovies\EmuMoviesVideoFile.cs" />
+    <Compile Include="MetadataProviders\EmuMovies\EmuMoviesVideoMatch.cs" />
+    <Compile Include="MetadataProviders\EmuMovies\EmuMoviesVideoService.cs" />
     <Compile Include="Models\FfprobeVideoInfoOutput.cs" />
     <Compile Include="Models\GoogleImage.cs" />
     <Compile Include="Models\LogoControlThemeSettings.cs" />

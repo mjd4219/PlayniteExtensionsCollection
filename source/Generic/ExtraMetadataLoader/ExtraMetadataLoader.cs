@@ -1,6 +1,8 @@
 ﻿using ExtraMetadataLoader.Helpers;
 using ExtraMetadataLoader.Interfaces;
 using ExtraMetadataLoader.LogoProviders;
+using ExtraMetadataLoader.LogoProviders.LaunchBox;
+using ExtraMetadataLoader.MetadataProviders;
 using ExtraMetadataLoader.Models;
 using ExtraMetadataLoader.Services;
 using ExtraMetadataLoader.ViewModels;
@@ -53,6 +55,7 @@ namespace ExtraMetadataLoader
         private readonly VideosDownloader videosDownloader;
         private readonly ExtraMetadataHelper extraMetadataHelper;
         private readonly List<ILogoProvider> _logoProviders;
+        private readonly ILogoProvider _launchBoxLogoProvider;
         private VideoPlayerControl detailsVideoControl;
         private VideoPlayerControl gridVideoControl;
         private VideoPlayerControl genericVideoControl;
@@ -94,7 +97,8 @@ namespace ExtraMetadataLoader
             });
 
             extraMetadataHelper = new ExtraMetadataHelper(PlayniteApi);
-            videosDownloader = new VideosDownloader(PlayniteApi, settings.Settings, extraMetadataHelper);
+            var emuMoviesCredentialsStore = new EmuMoviesCredentialsStore(GetPluginUserDataPath(), logger);
+            videosDownloader = new VideosDownloader(PlayniteApi, settings.Settings, extraMetadataHelper, emuMoviesCredentialsStore);
             PlayniteApi.Database.Games.ItemCollectionChanged += (sender, ItemCollectionChangedArgs) =>
             {
                 foreach (var removedItem in ItemCollectionChangedArgs.RemovedItems)
@@ -140,6 +144,8 @@ namespace ExtraMetadataLoader
                 PlayniteUtilities.AddTextIcoFontResource(iconResource.Key, iconResource.Value);
             }
 
+            var launchBoxMetadataCache = new LaunchBoxMetadataCache(Path.Combine(GetPluginUserDataPath(), "LaunchBox"), logger);
+            _launchBoxLogoProvider = new LaunchBoxClearLogoProvider(PlayniteApi, logger, launchBoxMetadataCache);
             _logoProviders = new List<ILogoProvider>
             {
                 new SteamProvider(PlayniteApi, settings.Settings),
@@ -405,6 +411,38 @@ namespace ExtraMetadataLoader
                 },
                 new GameMenuItem
                 {
+                    Description = ResourceProvider.GetString("LOCExtra_Metadata_Loader_MenuItemDescriptionDownloadLaunchBoxLogosSelectedGames"),
+                    MenuSection = $"Extra Metadata|{logosSection}",
+                    Icon = "emtDownloadIcon",
+                    Action = _ => {
+                        var overwrite = GetBoolFromYesNoDialog(ResourceProvider.GetString("LOCExtra_Metadata_Loader_DialogMessageOverwriteLogosChoice"));
+                        var isBackgroundDownload = GetBoolFromYesNoDialog(ResourceProvider.GetString("LOCExtra_Metadata_Loader_DialogAskSelectLogosAutomatically"));
+                        var progressTitle = ResourceProvider.GetString("LOCExtra_Metadata_Loader_DialogMessageDownloadingLogosLaunchBox");
+
+                        var progressOptions = new GlobalProgressOptions(progressTitle, true);
+                        progressOptions.IsIndeterminate = false;
+                        PlayniteApi.Dialogs.ActivateGlobalProgress((a) =>
+                        {
+                            var games = args.Games.Distinct();
+                            a.ProgressMaxValue = games.Count() + 1;
+                            foreach (var game in games)
+                            {
+                                if (a.CancelToken.IsCancellationRequested)
+                                {
+                                    break;
+                                }
+
+                                a.CurrentProgressValue++;
+                                a.Text = $"{progressTitle}\n\n{a.CurrentProgressValue}/{games.Count()}\n{game.Name}";
+
+                                GetGameLogo(_launchBoxLogoProvider, game, isBackgroundDownload, overwrite, a.CancelToken);
+                            };
+                        }, progressOptions);
+                        PlayniteApi.Dialogs.ShowMessage(ResourceProvider.GetString("LOCExtra_Metadata_Loader_DialogMessageDone"), "Extra Metadata Loader");
+                    }
+                },
+                new GameMenuItem
+                {
                     Description = ResourceProvider.GetString("LOCExtra_Metadata_Loader_MenuItemDescriptionDownloadGoogleLogoSelectedGame"),
                     MenuSection = $"Extra Metadata|{logosSection}",
                     Icon = "emtGoogleIcon",
@@ -490,6 +528,44 @@ namespace ExtraMetadataLoader
                                 a.CurrentProgressValue++;
                                 a.Text = $"{progressTitle}\n\n{a.CurrentProgressValue}/{games.Count()}\n{game.Name}";
                                 videosDownloader.DownloadSteamVideo(game, overwrite, false, a.CancelToken, true, false);
+                            };
+                        }, progressOptions);
+                        UpdatePlayersData();
+                        PlayniteApi.Dialogs.ShowMessage(ResourceProvider.GetString("LOCExtra_Metadata_Loader_DialogMessageDone"), "Extra Metadata Loader");
+                    }
+                },
+                new GameMenuItem
+                {
+                    Description = ResourceProvider.GetString("LOCExtra_Metadata_Loader_MenuItemDescriptionDownloadEmuMoviesVideosSelectedGames"),
+                    MenuSection = $"Extra Metadata|{videosSection}|{videosSection}",
+                    Icon = "emtDownloadIcon",
+                    Action = _ =>
+                    {
+                        if (!ValidateExecutablesSettings(true, false))
+                        {
+                            return;
+                        }
+                        var overwrite = GetBoolFromYesNoDialog(ResourceProvider.GetString("LOCExtra_Metadata_Loader_DialogMessageOverwriteVideosChoice"));
+                        var selectAutomatically = GetBoolFromYesNoDialog(ResourceProvider.GetString("LOCExtra_Metadata_Loader_DialogAskSelectVideosAutomatically"));
+                        var progressTitle = ResourceProvider.GetString("LOCExtra_Metadata_Loader_DialogMessageDownloadingVideosEmuMovies");
+
+                        var progressOptions = new GlobalProgressOptions(progressTitle, true);
+                        progressOptions.IsIndeterminate = false;
+                        ClearVideoSources();
+                        PlayniteApi.Dialogs.ActivateGlobalProgress((a) =>
+                        {
+                            var games = args.Games.Distinct();
+                            a.ProgressMaxValue = games.Count() + 1;
+                            foreach (var game in games)
+                            {
+                                if (a.CancelToken.IsCancellationRequested)
+                                {
+                                    break;
+                                }
+
+                                a.CurrentProgressValue++;
+                                a.Text = $"{progressTitle}\n\n{a.CurrentProgressValue}/{games.Count()}\n{game.Name}";
+                                videosDownloader.DownloadEmuMoviesVideo(game, overwrite, false, a.CancelToken, selectAutomatically);
                             };
                         }, progressOptions);
                         UpdatePlayersData();
@@ -970,13 +1046,19 @@ namespace ExtraMetadataLoader
                             break;
                         }
 
+                        var logoDownloaded = false;
                         foreach (var logoProvider in _logoProviders)
                         {
-                            var logoDownloaded = GetGameLogo(logoProvider, game, true, settings.Settings.LibUpdateSelectLogosAutomatically, a.CancelToken);
+                            logoDownloaded = GetGameLogo(logoProvider, game, true, settings.Settings.LibUpdateSelectLogosAutomatically, a.CancelToken);
                             if (logoDownloaded)
                             {
                                 break;
                             }
+                        }
+
+                        if (!logoDownloaded && settings.Settings.UseLaunchBoxForAutomaticLogoDownloads)
+                        {
+                            GetGameLogo(_launchBoxLogoProvider, game, true, settings.Settings.LibUpdateSelectLogosAutomatically, a.CancelToken);
                         }
                     };
                 }, progressOptions);
@@ -987,6 +1069,13 @@ namespace ExtraMetadataLoader
                 var progressTitle = ResourceProvider.GetString("LOCExtra_Metadata_Loader_DialogMessageLibUpdateAutomaticDownloadVideos");
                 var progressOptions = new GlobalProgressOptions(progressTitle, true);
                 progressOptions.IsIndeterminate = false;
+                var automaticVideoDownloadSource = settings.Settings.AutomaticVideoDownloadSource;
+                var downloadSteamVideo = settings.Settings.DownloadVideosOnLibUpdate &&
+                                         (automaticVideoDownloadSource == AutomaticVideoDownloadSource.Steam ||
+                                          automaticVideoDownloadSource == AutomaticVideoDownloadSource.SteamThenEmuMovies);
+                var downloadEmuMoviesVideo = settings.Settings.DownloadVideosOnLibUpdate &&
+                                             (automaticVideoDownloadSource == AutomaticVideoDownloadSource.EmuMovies ||
+                                              automaticVideoDownloadSource == AutomaticVideoDownloadSource.SteamThenEmuMovies);
                 PlayniteApi.Dialogs.ActivateGlobalProgress((a) =>
                 {
                     var games = PlayniteApi.Database.Games.Where(x => x.Added.HasValue && x.Added > settings.Settings.LastAutoLibUpdateAssetsDownload);
@@ -1000,7 +1089,15 @@ namespace ExtraMetadataLoader
 
                         a.CurrentProgressValue++;
                         a.Text = $"{progressTitle}\n\n{a.CurrentProgressValue}/{games.Count()}\n{game.Name}";
-                        videosDownloader.DownloadSteamVideo(game, false, true, a.CancelToken, settings.Settings.DownloadVideosOnLibUpdate, settings.Settings.DownloadVideosMicroOnLibUpdate);
+                        if (downloadSteamVideo || settings.Settings.DownloadVideosMicroOnLibUpdate)
+                        {
+                            videosDownloader.DownloadSteamVideo(game, false, true, a.CancelToken, downloadSteamVideo, settings.Settings.DownloadVideosMicroOnLibUpdate);
+                        }
+
+                        if (downloadEmuMoviesVideo && !FileSystem.FileExists(extraMetadataHelper.GetGameVideoPath(game)))
+                        {
+                            videosDownloader.DownloadEmuMoviesVideo(game, false, true, a.CancelToken);
+                        }
                     };
                 }, progressOptions);
             }
