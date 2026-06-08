@@ -20,6 +20,7 @@ namespace ExtraMetadataLoader.MetadataProviders
             { "ColecoVision", "Colecovision" },
             { "Commodore 64", "Commodore 64" },
             { "Dreamcast", "Sega Dreamcast" },
+            { "GBA", "Game Boy Advance" },
             { "Game Boy", "Nintendo Game Boy" },
             { "Game Boy Advance", "Nintendo Game Boy Advance" },
             { "Game Boy Color", "Nintendo Game Boy Color" },
@@ -36,6 +37,7 @@ namespace ExtraMetadataLoader.MetadataProviders
             { "Nintendo 64", "Nintendo 64" },
             { "Nintendo DS", "Nintendo DS" },
             { "Nintendo Entertainment System", "Nintendo Entertainment System" },
+            { "Nintendo GBA", "Nintendo GBA" },
             { "Nintendo Game Boy", "Nintendo Game Boy" },
             { "Nintendo Game Boy Advance", "Nintendo Game Boy Advance" },
             { "Nintendo Game Boy Color", "Nintendo Game Boy Color" },
@@ -52,6 +54,9 @@ namespace ExtraMetadataLoader.MetadataProviders
             { "PS3", "Sony Playstation 3" },
             { "PSP", "Sony PSP" },
             { "PSX", "Sony Playstation" },
+            { "Nintendo SNES", "Super Nintendo Entertainment System" },
+            { "Nintendo Super Famicom", "Super Nintendo Entertainment System" },
+            { "Nintendo Super Nintendo", "Super Nintendo Entertainment System" },
             { "Sega 32X", "Sega 32X" },
             { "Sega CD", "Sega CD" },
             { "Sega Dreamcast", "Sega Dreamcast" },
@@ -61,6 +66,8 @@ namespace ExtraMetadataLoader.MetadataProviders
             { "Sega Mega Drive", "Sega Mega Drive" },
             { "Sega Saturn", "Sega Saturn" },
             { "SNES", "Super Nintendo Entertainment System" },
+            { "Super Famicom", "Super Nintendo Entertainment System" },
+            { "Super Nintendo", "Super Nintendo Entertainment System" },
             { "Sony PlayStation", "Sony Playstation" },
             { "Sony PlayStation 2", "Sony Playstation 2" },
             { "Sony PlayStation 3", "Sony Playstation 3" },
@@ -75,6 +82,26 @@ namespace ExtraMetadataLoader.MetadataProviders
             { "Xbox 360", "Microsoft Xbox 360" }
         };
 
+        private static readonly Dictionary<string, string[]> PlatformAliases = new Dictionary<string, string[]>(StringComparer.OrdinalIgnoreCase)
+        {
+            { "Nintendo Game Boy Advance", new[] { "Nintendo GBA", "GBA", "Game Boy Advance", "Nintendo Game Boy Advance" } },
+            { "Game Boy Advance", new[] { "Nintendo GBA", "GBA", "Game Boy Advance", "Nintendo Game Boy Advance" } },
+            { "Nintendo GBA", new[] { "Nintendo GBA", "GBA", "Game Boy Advance", "Nintendo Game Boy Advance" } },
+            { "GBA", new[] { "Nintendo GBA", "GBA", "Game Boy Advance", "Nintendo Game Boy Advance" } },
+            {
+                "Super Nintendo Entertainment System",
+                new[]
+                {
+                    "Nintendo Super Nintendo",
+                    "Super Nintendo",
+                    "Nintendo Super Famicom",
+                    "Super Famicom",
+                    "Nintendo SNES",
+                    "SNES"
+                }
+            }
+        };
+
         public static List<string> GetEmuMoviesPlatforms(Game game)
         {
             if (game?.Platforms?.Any() != true)
@@ -83,22 +110,26 @@ namespace ExtraMetadataLoader.MetadataProviders
             }
 
             return game.Platforms
-                .Select(x => GetEmuMoviesPlatform(x.Name))
+                .SelectMany(x => GetEmuMoviesPlatforms(x.Name))
                 .Where(x => !x.IsNullOrWhiteSpace())
                 .Distinct(StringComparer.OrdinalIgnoreCase)
                 .ToList();
         }
 
-        private static string GetEmuMoviesPlatform(string playnitePlatformName)
+        private static IEnumerable<string> GetEmuMoviesPlatforms(string playnitePlatformName)
         {
             if (playnitePlatformName.IsNullOrWhiteSpace())
             {
-                return null;
+                return Enumerable.Empty<string>();
             }
 
-            return PlatformMap.TryGetValue(playnitePlatformName, out var emuMoviesPlatform)
-                ? emuMoviesPlatform
+            var emuMoviesPlatform = PlatformMap.TryGetValue(playnitePlatformName, out var mappedPlatform)
+                ? mappedPlatform
                 : playnitePlatformName;
+
+            return PlatformAliases.TryGetValue(emuMoviesPlatform, out var aliases)
+                ? aliases
+                : new[] { emuMoviesPlatform };
         }
     }
 }
