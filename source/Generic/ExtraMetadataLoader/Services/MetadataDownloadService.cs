@@ -1,4 +1,4 @@
-﻿using EventsCommon;
+using EventsCommon;
 using ExtraMetadataLoader.Helpers;
 using ExtraMetadataLoader.MetadataProviders;
 using ExtraMetadataLoader.VideosProcessor;
@@ -8,8 +8,8 @@ using Playnite.SDK.Models;
 using PluginsCommon;
 using System;
 using System.Collections.Generic;
+using System.IO;
 using System.Linq;
-using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
 
@@ -58,17 +58,28 @@ namespace ExtraMetadataLoader.Services
             return DownloadLogoAsync(game, _logoProviders, isBackgroundDownload, false, true, cancelToken);
         }
 
-        public async Task<bool> DownloadLogoAsync(Game game, bool isBackgroundDownload, bool overwrite, CancellationToken cancelToken)
+        public Task<bool> DownloadLogoAsync(Game game, bool isBackgroundDownload, bool overwrite, CancellationToken cancelToken)
         {
-            return await DownloadLogoAsync(game, _logoProviders, isBackgroundDownload, overwrite, false, cancelToken);
+            return DownloadLogoAsync(game, _logoProviders, isBackgroundDownload, overwrite, false, cancelToken);
         }
 
-        public async Task<bool> DownloadLogoAsync(ILogoProvider logoProvider, Game game, bool isBackgroundDownload, bool overwrite, CancellationToken cancelToken)
+        public Task<bool> DownloadLogoAsync(ILogoProvider logoProvider, Game game, bool isBackgroundDownload, bool overwrite, CancellationToken cancelToken)
         {
-            return await DownloadLogoAsync(game, new[] { logoProvider }, isBackgroundDownload, overwrite, false, cancelToken);
+            if (logoProvider is null)
+            {
+                return Task.FromResult(false);
+            }
+
+            return DownloadLogoAsync(game, new[] { logoProvider }, isBackgroundDownload, overwrite, false, cancelToken);
         }
 
-        private async Task<bool> DownloadLogoAsync(Game game, IEnumerable<ILogoProvider> logoProviders, bool isBackgroundDownload, bool overwrite, bool isLibraryUpdateDownload, CancellationToken cancelToken)
+        private async Task<bool> DownloadLogoAsync(
+            Game game,
+            IEnumerable<ILogoProvider> logoProviders,
+            bool isBackgroundDownload,
+            bool overwrite,
+            bool isLibraryUpdateDownload,
+            CancellationToken cancelToken)
         {
             var logoDownloadPath = ExtraMetadataHelper.GetGameLogoPath(game);
             if (!overwrite && FileSystem.FileExists(logoDownloadPath))
@@ -90,7 +101,7 @@ namespace ExtraMetadataLoader.Services
                     var logoUrl = provider.GetLogoUrl(game, downloadOptions, cancelToken);
                     if (logoUrl.IsNullOrEmpty())
                     {
-                        continue;                        
+                        continue;
                     }
 
                     var downloadIsSuccess = await DownloadFile(logoUrl, logoDownloadPath, cancelToken);
@@ -111,11 +122,11 @@ namespace ExtraMetadataLoader.Services
                         _logger.Debug($"LaunchBox logo downloaded successfully for '{game.Name}'.");
                     }
 
-                    break;
+                    return true;
                 }
                 catch (Exception ex)
                 {
-                    _logger.Error(ex, $"Error during logo metadata download for {provider.Id}");
+                    _logger.Error(ex, $"Error during logo metadata download for {provider?.Id}");
                 }
             }
 
@@ -140,15 +151,25 @@ namespace ExtraMetadataLoader.Services
                 .WithDownloadTo(downloadPath);
 
             var downloadFileResult = await request.DownloadFileAsync(cancelToken);
-            if (!downloadFileResult.IsSuccess)
-            {
-                return false;
-            }
-            
-            return true;
+            return downloadFileResult.IsSuccess;
         }
 
-        public async Task<bool> DownloadVideoAsync(Game game, bool isBackgroundDownload, bool overwrite, CancellationToken cancelToken)
+        public Task<bool> DownloadVideoAsync(Game game, bool isBackgroundDownload, bool overwrite, CancellationToken cancelToken)
+        {
+            return DownloadVideoAsync(_videoProviders, game, isBackgroundDownload, overwrite, cancelToken);
+        }
+
+        public Task<bool> DownloadVideoAsync(IVideoProvider videoProvider, Game game, bool isBackgroundDownload, bool overwrite, CancellationToken cancelToken, bool selectAutomatically = false)
+        {
+            if (videoProvider is null)
+            {
+                return Task.FromResult(false);
+            }
+
+            return DownloadVideoAsync(new[] { videoProvider }, game, isBackgroundDownload, overwrite, cancelToken, selectAutomatically);
+        }
+
+        private async Task<bool> DownloadVideoAsync(IEnumerable<IVideoProvider> videoProviders, Game game, bool isBackgroundDownload, bool overwrite, CancellationToken cancelToken, bool selectAutomatically = false)
         {
             var videoDownloadPath = ExtraMetadataHelper.GetGameVideoPath(game);
             if (!overwrite && FileSystem.FileExists(videoDownloadPath))
@@ -156,8 +177,8 @@ namespace ExtraMetadataLoader.Services
                 return true;
             }
 
-            var downloadOptions = new VideoDownloadOptions(videoDownloadPath, isBackgroundDownload);
-            foreach (var provider in _videoProviders)
+            var downloadOptions = new VideoDownloadOptions(videoDownloadPath, isBackgroundDownload, VideoType.Trailer, selectAutomatically);
+            foreach (var provider in videoProviders)
             {
                 try
                 {
@@ -168,9 +189,13 @@ namespace ExtraMetadataLoader.Services
                     }
 
                     var result = getResult.Value;
+                    string videoSourcePath;
+                    var deleteSource = false;
                     if (result.IsUrl)
                     {
-                        var downloadIsSuccess = await DownloadFile(result.Url, videoDownloadPath, cancelToken);
+                        videoSourcePath = Path.Combine(Path.GetTempPath(), $"ExtraMetadataLoader_MetadataVideo_{game.Id}_{Guid.NewGuid():N}.mp4");
+                        deleteSource = true;
+                        var downloadIsSuccess = await DownloadFile(result.Url, videoSourcePath, cancelToken);
                         if (!downloadIsSuccess)
                         {
                             continue;
@@ -180,9 +205,14 @@ namespace ExtraMetadataLoader.Services
                     {
                         continue;
                     }
+                    else
+                    {
+                        videoSourcePath = result.FilePath;
+                        deleteSource = true;
+                    }
 
-                    var videoSourcePath = result.IsUrl ? videoDownloadPath : result.FilePath;
-                    var processingIsSuccess = _videoProcessor.ProcessVideo(videoSourcePath, videoDownloadPath, false, true);
+                    videoDownloadPath = ExtraMetadataHelper.GetGameVideoPath(game, true);
+                    var processingIsSuccess = _videoProcessor.ProcessVideo(videoSourcePath, videoDownloadPath, false, deleteSource);
                     if (!processingIsSuccess)
                     {
                         FileSystem.DeleteFile(videoSourcePath);
@@ -190,7 +220,7 @@ namespace ExtraMetadataLoader.Services
                     }
 
                     OnVideoUpdated(game);
-                    break;
+                    return true;
                 }
                 catch (Exception ex)
                 {
